@@ -1,4 +1,5 @@
 import { adminProcedure, router } from "../_core/trpc";
+import { MULTI_ASSET_ETFS } from "../lib/multiAssetSleeve";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { importHistoricalPrices, importHistoricalPricesForTicker } from "../jobs/importHistoricalPrices";
@@ -370,8 +371,28 @@ export const adminRouter = router({
       }),
 
     /**
-     * Import historical prices for a specific ticker
+     * Trigger immediate backfill for all sleeve ETF tickers (AGGH.SW, ZGLD.SW, CMDY, ABTC.SW, REET, ...)
      */
+    backfillSleeveEtfs: adminProcedure
+      .mutation(async () => {
+        const allTickers = Object.values(MULTI_ASSET_ETFS).flat().map(e => e.ticker);
+        const results: { ticker: string; success: boolean; pricesImported: number; error?: string }[] = [];
+        for (const ticker of allTickers) {
+          try {
+            const result = await importHistoricalPricesForTicker(ticker);
+            results.push({ ticker, success: result.success, pricesImported: result.pricesImported });
+          } catch (err: any) {
+            results.push({ ticker, success: false, pricesImported: 0, error: err?.message });
+          }
+        }
+        return {
+          success: true,
+          tickers: allTickers,
+          results,
+          totalPricesImported: results.reduce((s, r) => s + r.pricesImported, 0),
+        };
+      }),
+
     importHistoricalPricesForTicker: adminProcedure
       .input(
         z.object({
@@ -1272,8 +1293,71 @@ export const adminRouter = router({
       return getAnalyticsServiceStatus();
     }),
 
+    // ─── Asset-Class Scoring Weights ─────────────────────────────────────────
+
     /**
-     * Manueller Trigger für den täglichen signalScore-Refresh + Preishistorie-Backfill.
+     * Get asset-class scoring weights from appSettings.
+     * Returns defaults if not yet configured.
+     */
+    getAssetClassWeights: adminProcedure.query(async () => {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return { success: false, weights: null };
+      try {
+        const { appSettings } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db
+          .select()
+          .from(appSettings)
+          .where(eq(appSettings.key, "asset_class_weights"))
+          .limit(1);
+        if (rows.length > 0) {
+          return { success: true, weights: JSON.parse(rows[0].value as string) };
+        }
+        // Return built-in defaults
+        const defaults = {
+          bond:      { rsiWeight: 0.3, rangeWeight: 0.2, yieldWeight: 0.5 },
+          gold:      { rsiWeight: 0.4, rangeWeight: 0.4, ytdWeight: 0.2 },
+          commodity: { rsiWeight: 0.4, rangeWeight: 0.4, ytdWeight: 0.2 },
+          crypto:    { rsiWeight: 0.35, rangeWeight: 0.35, ytdWeight: 0.3 },
+          realestate:{ rsiWeight: 0.3, rangeWeight: 0.2, yieldWeight: 0.5 },
+        };
+        return { success: true, weights: defaults };
+      } catch (err: any) {
+        return { success: false, weights: null };
+      }
+    }),
+
+    /**
+     * Persist asset-class scoring weights to appSettings.
+     */
+    updateAssetClassWeights: adminProcedure
+      .input(
+        z.object({
+          bond:       z.object({ rsiWeight: z.number(), rangeWeight: z.number(), yieldWeight: z.number() }),
+          gold:       z.object({ rsiWeight: z.number(), rangeWeight: z.number(), ytdWeight: z.number() }),
+          commodity:  z.object({ rsiWeight: z.number(), rangeWeight: z.number(), ytdWeight: z.number() }),
+          crypto:     z.object({ rsiWeight: z.number(), rangeWeight: z.number(), ytdWeight: z.number() }),
+          realestate: z.object({ rsiWeight: z.number(), rangeWeight: z.number(), yieldWeight: z.number() }),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("../db");
+        const db = await getDb();
+        if (!db) return { success: false, message: "DB nicht verfügbar" };
+        try {
+          const { appSettings } = await import("../../drizzle/schema");
+          await db
+            .insert(appSettings)
+            .values({ key: "asset_class_weights", value: JSON.stringify(input) })
+            .onDuplicateKeyUpdate({ set: { value: JSON.stringify(input) } });
+          return { success: true, message: "Gewichte gespeichert" };
+        } catch (err: any) {
+          return { success: false, message: err?.message ?? "Unbekannter Fehler" };
+        }
+      }),
+
+    /**
      * Ruft den internen /api/scheduled/signalScoreRefresh Endpoint auf.
      * Nützlich um nicht auf 07:00 UTC warten zu müssen.
      */
@@ -1574,16 +1658,25 @@ export const adminRouter = router({
         }));
 
         // 3) portfolioData im Format der portfolios.create-Mutation aufbauen
+        // R-CHF-PRICE: avgBuyPriceCHF = currentPrice × exchangeRateToChf (Kaufzeitpunkt = jetzt)
+        // Damit ist die Tag-1-Rendite exakt 0% — keine Verzerrung durch veraltete DB-Kurse.
         const portfolioData = {
-          stocks: normalizedPositions.map(p => ({
-            ticker: p.ticker,
-            companyName: p.companyName,
-            sector: p.sector ?? 'Andere',
-            currency: p.currency,
-            currentPrice: p.currentPrice,
-            exchangeRateToChf: p.exchangeRateToChf,
-            weight: p.weightPct,
-          })),
+          stocks: normalizedPositions.map(p => {
+            const fxRate = p.exchangeRateToChf ?? 1;
+            const priceCHF = (p.currentPrice ?? 0) * fxRate;
+            return {
+              ticker: p.ticker,
+              companyName: p.companyName,
+              sector: p.sector ?? 'Andere',
+              currency: p.currency,
+              currentPrice: p.currentPrice,
+              exchangeRateToChf: fxRate,
+              weight: p.weightPct,
+              // Kaufpreis in CHF explizit setzen → Tag-1-Rendite = 0%
+              avgBuyPrice: priceCHF,
+              avgBuyPriceCHF: priceCHF,
+            };
+          }),
         };
 
         // 4) Portfolio über den bestehenden DB-Helper anlegen
