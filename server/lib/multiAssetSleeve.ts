@@ -42,15 +42,14 @@ export const ASSET_CLASS_LABELS: Record<SleeveAssetKey, string> = {
  * - bond:        AGGH.SW ✓ (4.68 EUR, iShares Core Global Agg. Bond EUR Hedged;
  *                Achtung: Yahoo-Kurs auf SIX z.T. veraltet) · AGG ✓ (97.46 USD)
  *                · CSBGC0.SW ✓ (102.68 CHF, iShares Swiss Gov Bond 7-15)
- * - commodity:   BCOM.SW ✓ (19.34 USD, L&G All Commodities) · CMDY ✓ (59.83 USD)
+ * - commodity:   CMDY ✓ (55.07 USD, iShares Bloomberg Roll Select Commodity) · PDBC ✓ (15.78 USD)
+ *                CMOD.SW entfernt: kein EODHD-EOD-Endpunkt (404); BCOM.SW entfernt (404)
  * - gold:        ZGLD.SW ✓ (985.30 CHF, Swisscanto Gold ETF) · CSGLDE.SW ✓
  *                (106.54 EUR, Yahoo-Kurs veraltet) · SGLN.L ✓ (5924 GBp)
  *                — SGLN.SW entfernt: auf Yahoo nicht auflösbar (404)
- * - realestate:  IWDP.L ✓ (2016.5 GBp, iShares Dev. Markets Property Yield)
- *                — SREAL.SW entfernt: ist der SXI Real Estate INDEX (nicht
- *                handelbar), kein ETF · SRET ✓ (23.00 USD, Global X REIT)
- * - crypto btc:  VBTC.SW ✓ (28.08 CHF, VanEck Bitcoin ETN) · ABTC.SW ✓
- *                (17.51 CHF, 21Shares Bitcoin ETP)
+ * - realestate:  REET ✓ (27.65 USD, iShares Global REIT ETF) · VNQI ✓ (44.82 USD, Vanguard Global ex-US REIT)
+ *                IWDP.L entfernt: kein EODHD-EOD-Endpunkt (404); SREAL.SW entfernt: nicht handelbar
+ * - crypto btc:  ABTC.SW ✓ (14.65 CHF, 21Shares Bitcoin ETP) · VBTC.SW entfernt: kein EODHD-EOD-Endpunkt (404)
  * - crypto sol:  ASOL.SW ✓ (41.89 CHF, 21Shares Solana Staking ETP) · VSOL.SW ✓
  *                (3.51 CHF, VanEck Solana ETN)
  */
@@ -61,8 +60,8 @@ export const MULTI_ASSET_ETFS: Record<AssetClass, SleeveEtf[]> = {
     { ticker: "CSBGC0.SW", name: "iShares Swiss Domestic Government Bond 7-15 ETF", assetClass: "bond", currency: "CHF" },
   ],
   commodity: [
-    { ticker: "BCOM.SW", name: "L&G All Commodities UCITS ETF", assetClass: "commodity", currency: "USD" },
     { ticker: "CMDY", name: "iShares Bloomberg Roll Select Commodity Strategy ETF", assetClass: "commodity", currency: "USD" },
+    { ticker: "PDBC", name: "Invesco Optimum Yield Diversified Commodity Strategy ETF", assetClass: "commodity", currency: "USD" },
   ],
   gold: [
     { ticker: "ZGLD.SW", name: "Swisscanto (CH) Gold ETF EA CHF", assetClass: "gold", currency: "CHF" },
@@ -70,11 +69,10 @@ export const MULTI_ASSET_ETFS: Record<AssetClass, SleeveEtf[]> = {
     { ticker: "SGLN.L", name: "iShares Physical Gold ETC", assetClass: "gold", currency: "GBp" },
   ],
   realestate: [
-    { ticker: "IWDP.L", name: "iShares Developed Markets Property Yield UCITS ETF", assetClass: "realestate", currency: "GBp" },
-    { ticker: "SRET", name: "Global X SuperDividend REIT ETF", assetClass: "realestate", currency: "USD" },
+    { ticker: "REET", name: "iShares Global REIT ETF", assetClass: "realestate", currency: "USD" },
+    { ticker: "VNQI", name: "Vanguard Global ex-U.S. Real Estate ETF", assetClass: "realestate", currency: "USD" },
   ],
   crypto: [
-    { ticker: "VBTC.SW", name: "VanEck Bitcoin ETN", assetClass: "crypto", currency: "CHF", cryptoKind: "btc" },
     { ticker: "ABTC.SW", name: "21Shares Bitcoin ETP", assetClass: "crypto", currency: "CHF", cryptoKind: "btc" },
     { ticker: "ASOL.SW", name: "21Shares Solana Staking ETP", assetClass: "crypto", currency: "CHF", cryptoKind: "sol" },
     { ticker: "VSOL.SW", name: "VanEck Solana ETN", assetClass: "crypto", currency: "CHF", cryptoKind: "sol" },
